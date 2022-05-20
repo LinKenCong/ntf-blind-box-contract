@@ -20,7 +20,7 @@ contract BlindBoxNFT is Ownable, ERC721URIStorage {
     // 盲盒 价格
     uint256 private _blindBoxPrice;
 
-    // 当前盲盒活动状态
+    // 当前盲盒活动状态 { 开始，售卖，结束 }
     enum BlindBoxStatus {
         START,
         SALE,
@@ -65,6 +65,15 @@ contract BlindBoxNFT is Ownable, ERC721URIStorage {
         _;
     }
 
+    /**
+     * @dev init contract
+     *
+     * @param minter minter
+     * @param name nft name
+     * @param symbol nft symbol
+     * @param nftURI nft baseuri
+     * @param blindBoxURI blindbox img uri
+     */
     constructor(
         address minter,
         string memory name,
@@ -78,7 +87,12 @@ contract BlindBoxNFT is Ownable, ERC721URIStorage {
         _blindBoxStatus = BlindBoxStatus.START;
     }
 
-    // 制作盲盒NFT
+    /**
+     * @dev 制作盲盒NFT
+     *
+     * @param _to address
+     * @param _uri nft uri  = ( baseuri + _uri ) or ( baseuri + tokenid )
+     */
     function safeMint(address _to, string memory _uri)
         external
         onlyOwner
@@ -91,7 +105,11 @@ contract BlindBoxNFT is Ownable, ERC721URIStorage {
         emit MintBlindBoxNFT(__tokenId, _tokenIdCounter.current());
     }
 
-    // 设置盲盒开启
+    /**
+     * @dev 设置盲盒开启
+     *
+     * @param _tokenId NFT tokenId
+     */
     function setOpenBlindBox(uint256 _tokenId)
         external
         onlyMinter
@@ -102,7 +120,10 @@ contract BlindBoxNFT is Ownable, ERC721URIStorage {
         emit OpenBlindBox(_tokenId);
     }
 
-    // 设置 盲盒活动开始售卖
+    /**
+     * @dev 设置 盲盒活动开始售卖
+     * @param _price blindbox sale price
+     */
     function setBlindBoxSale(uint256 _price)
         external
         onlyOwner
@@ -112,7 +133,9 @@ contract BlindBoxNFT is Ownable, ERC721URIStorage {
         _blindBoxPrice = _price;
     }
 
-    // 设置 盲盒活动结束
+    /**
+     * @dev 设置 盲盒活动结束
+     */
     function setBlindBoxEnd()
         external
         onlyOwner
@@ -121,7 +144,9 @@ contract BlindBoxNFT is Ownable, ERC721URIStorage {
         _blindBoxStatus = BlindBoxStatus.END;
     }
 
-    // 合约拥有者 设置所有盲盒开启
+    /**
+     * @dev 合约拥有者 设置所有盲盒开启
+     */
     function setOpenAllBlindBox()
         external
         onlyOwner
@@ -135,7 +160,12 @@ contract BlindBoxNFT is Ownable, ERC721URIStorage {
         }
     }
 
-    // 查看NFT URI
+    /**
+     * @dev 查看NFT URI
+     *
+     * @param _tokenId NFT tokenId
+     * @return string uri
+     */
     function tokenURI(uint256 _tokenId)
         public
         view
@@ -150,17 +180,27 @@ contract BlindBoxNFT is Ownable, ERC721URIStorage {
         }
     }
 
-    // 查看盲盒开启状态
+    /**
+     * @dev 查看盲盒开启状态
+     *
+     * @param _tokenId NFT tokenId
+     * @return bool opened state
+     */
     function isBlindBoxOpened(uint256 _tokenId) public view returns (bool) {
         return _blindBoxOpened[_tokenId];
     }
 
-    // NFT URI
+    /**
+     * @dev NFT URI
+     * @return string baseuri
+     */
     function _baseURI() internal view override returns (string memory) {
         return _nftURI;
     }
 
-    // 销毁
+    /**
+     * @dev 销毁
+     */
     function _burn(uint256 _tokenId)
         internal
         override(ERC721URIStorage)
