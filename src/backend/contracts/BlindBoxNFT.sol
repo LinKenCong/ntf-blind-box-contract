@@ -1,53 +1,56 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.10;
 
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract BlindBoxNFT is Ownable, ERC721URIStorage {
-    using Counters for Counters.Counter;
+contract BlindBoxNFT is Ownable, ERC721Enumerable, ReentrancyGuard {
+    /// ============ Immutable storage ============
 
-    // tokenid 计数
-    Counters.Counter public _tokenIdCounter;
-    // 铸造者
-    address private _minter;
-    // 盲盒图片的uri(未开启)
-    string private _blindBoxURI;
-    // 图片的uri(开启)
-    string private _nftURI;
+    /// @notice 铸造每个NFT的成本 (in wei)
+    uint256 public immutable MINT_COST;
+    /// @notice 最大NFT铸造量
+    uint256 public immutable AVAILABLE_SUPPLY;
+    /// @notice 每个地址最大铸币量
+    uint256 public immutable MAX_PER_ADDRESS;
 
-    // 盲盒 价格
-    uint256 private _blindBoxPrice;
+    /// ============ Mutable storage ============
 
-    // 当前盲盒活动状态 { 开始，售卖，结束 }
+    /// @notice NFT 计数
+    uint256 public nftCount;
+    /// @notice token base uri
+    string internal _baseUri;
+    /// @notice token nft uri
+    string internal _nftUri;
+    /// @notice 当前状态 枚举 { 初始,售卖,结束 }
     enum BlindBoxStatus {
-        START,
+        INIT,
         SALE,
         END
     }
+    /// @notice 当前状态
     BlindBoxStatus private _blindBoxStatus;
 
-    // 盲盒打开状态
-    mapping(uint256 => bool) private _blindBoxOpened;
+    /// @notice 盲盒开启状态
+    mapping(uint256 => bool) internal _blindBoxOpened;
+    /// @notice Mapping from index to tokenId
+    mapping(uint256 => uint256) private _indexToTokenId;
 
-    // 监听 打开盲盒
+    /// ============ Events ============
+
+    /// @notice 监听 打开盲盒
     event OpenBlindBox(uint256 tokenId);
-    // 监听 制作盲盒
-    event MintBlindBoxNFT(uint256 oldTotalSupply, uint256 newTotalSupply);
 
-    // 检测 NFT存在
-    modifier exists(uint256 tokenId) {
+    /// ============ Modifier ============
+
+    /// @notice 检测 NFT存在
+    modifier tokenExists(uint256 tokenId) {
         require(_exists(tokenId), "BlindBoxNFT: Token nonexistent");
         _;
     }
-    // 检测 只有铸造者
-    modifier onlyMinter() {
-        require(msg.sender == _minter, "BlindBoxNFT: Auth failds");
-        _;
-    }
 
-    // 检测 盲盒未被打开
+    /// @notice 检测 盲盒未被打开
     modifier blindBoxNotOpen(uint256 tokenId) {
         require(
             !_blindBoxOpened[tokenId],
@@ -65,147 +68,178 @@ contract BlindBoxNFT is Ownable, ERC721URIStorage {
         _;
     }
 
-    /**
-     * @dev init contract
-     *
-     * @param minter minter
-     * @param name nft name
-     * @param symbol nft symbol
-     * @param nftURI nft baseuri
-     * @param blindBoxURI blindbox img uri
-     */
+    /// ============ Constructor ============
+
+    /// @notice Creates a new NFT distribution contract
+    /// @param _NFT_NAME name of NFT
+    /// @param _NFT_SYMBOL symbol of NFT
+    /// @param _NFT_BASE_URI baseuri of NFT
+    /// @param _AVAILABLE_SUPPLY total NFTs to sell
+    /// @param _MAX_PER_ADDRESS maximum mints allowed per address
+    /// @param _MINT_COST in wei per NFT
     constructor(
-        address minter,
-        string memory name,
-        string memory symbol,
-        string memory nftURI,
-        string memory blindBoxURI
-    ) ERC721(name, symbol) {
-        _minter = minter;
-        _nftURI = nftURI;
-        _blindBoxURI = blindBoxURI;
-        _blindBoxStatus = BlindBoxStatus.START;
+        string memory _NFT_NAME,
+        string memory _NFT_SYMBOL,
+        string memory _NFT_BASE_URI,
+        uint256 _AVAILABLE_SUPPLY,
+        uint256 _MAX_PER_ADDRESS,
+        uint256 _MINT_COST
+    ) ERC721(_NFT_NAME, _NFT_SYMBOL) {
+        require(
+            _MINT_COST > 0 && _AVAILABLE_SUPPLY > 0 && _MAX_PER_ADDRESS > 0,
+            "BlindBoxNFT: MINT_COST must bigger than zero"
+        );
+        MINT_COST = _MINT_COST;
+        AVAILABLE_SUPPLY = _AVAILABLE_SUPPLY;
+        MAX_PER_ADDRESS = _MAX_PER_ADDRESS;
+        _baseUri = _NFT_BASE_URI;
+        _blindBoxStatus = BlindBoxStatus.INIT;
     }
 
-    /**
-     * @dev 制作盲盒NFT
-     *
-     * @param _to address
-     * @param _uri nft uri  = ( baseuri + _uri ) or ( baseuri + tokenid )
-     */
-    function safeMint(address _to, string memory _uri)
-        external
-        onlyOwner
-        blindBoxNotStateCheck(BlindBoxStatus.START)
-    {
-        uint256 __tokenId = _tokenIdCounter.current();
-        _tokenIdCounter.increment();
-        _safeMint(_to, __tokenId);
-        _setTokenURI(__tokenId, _uri);
-        emit MintBlindBoxNFT(__tokenId, _tokenIdCounter.current());
-    }
+    /// ============ Functions ============
 
-    /**
-     * @dev 设置盲盒开启
-     *
-     * @param _tokenId NFT tokenId
-     */
-    function setOpenBlindBox(uint256 _tokenId)
+    /// @notice 设置盲盒开启
+    function openBlindBox(uint256 _tokenId)
         external
-        onlyMinter
-        exists(_tokenId)
+        tokenExists(_tokenId)
         blindBoxNotOpen(_tokenId)
     {
         _blindBoxOpened[_tokenId] = true;
         emit OpenBlindBox(_tokenId);
     }
 
-    /**
-     * @dev 设置 盲盒活动开始售卖
-     * @param _price blindbox sale price
-     */
-    function setBlindBoxSale(uint256 _price)
+    /// @notice mint NFT
+    function mint(uint256 quantity)
         external
-        onlyOwner
-        blindBoxNotStateCheck(BlindBoxStatus.START)
+        payable
+        nonReentrant
+        blindBoxNotStateCheck(BlindBoxStatus.END)
     {
-        _blindBoxStatus = BlindBoxStatus.SALE;
-        _blindBoxPrice = _price;
+        require(quantity > 0, "BlindBoxNFT: quantity must bigger than zero");
+        require(
+            balanceOf(msg.sender) + quantity <= MAX_PER_ADDRESS,
+            "BlindBoxNFT: Sale would exceed max quantity"
+        );
+        require(
+            _remainCount() >= quantity,
+            "BlindBoxNFT: RemainCount must bigger than amount"
+        );
+        require(
+            msg.value >= quantity * MINT_COST,
+            "BlindBoxNFT: Not enought value"
+        );
+        for (uint256 i = 0; i < quantity; i++) {
+            uint256 random = _random(_remainCount());
+            nftCount++;
+            _safeMint(msg.sender, _getTokenId(random));
+        }
     }
 
-    /**
-     * @dev 设置 盲盒活动结束
-     */
-    function setBlindBoxEnd()
+    /// ------ OnlyOwner ------
+
+    /// @notice 开始售卖
+    function saleActive()
+        external
+        onlyOwner
+        blindBoxNotStateCheck(BlindBoxStatus.INIT)
+    {
+        _blindBoxStatus = BlindBoxStatus.SALE;
+    }
+
+    /// @notice 结束售卖
+    function endActive(string memory nftUri)
         external
         onlyOwner
         blindBoxNotStateCheck(BlindBoxStatus.SALE)
     {
         _blindBoxStatus = BlindBoxStatus.END;
+        _nftUri = nftUri;
     }
 
-    /**
-     * @dev 合约拥有者 设置所有盲盒开启
-     */
-    function setOpenAllBlindBox()
-        external
-        onlyOwner
-        blindBoxNotStateCheck(BlindBoxStatus.END)
-    {
-        for (uint256 i = 0; i < _tokenIdCounter.current(); i++) {
-            if (_exists(i) && !_blindBoxOpened[i]) {
-                _blindBoxOpened[i] = true;
-                emit OpenBlindBox(i);
-            }
-        }
+    /// @notice 提取合约金额
+    function withdraw() external payable onlyOwner nonReentrant {
+        payable(owner()).transfer(address(this).balance);
     }
 
-    /**
-     * @dev 查看NFT URI
-     *
-     * @param _tokenId NFT tokenId
-     * @return string uri
-     */
-    function tokenURI(uint256 _tokenId)
+    /// ============ Developer-defined functions ============
+
+    /// @notice Returns metadata about a token
+    function tokenURI(uint256 tokenId)
         public
         view
-        override(ERC721URIStorage)
-        exists(_tokenId)
+        override
+        tokenExists(tokenId)
         returns (string memory)
     {
-        if (isBlindBoxOpened(_tokenId)) {
-            return super.tokenURI(_tokenId);
-        } else {
-            return _blindBoxURI;
+        if (!_blindBoxOpened[tokenId]) {
+            return _baseURI();
         }
+
+        return
+            bytes(_nftUri).length == 0
+                ? _nftUri
+                : string(abi.encodePacked(_nftUri, _toString(tokenId)));
     }
 
-    /**
-     * @dev 查看盲盒开启状态
-     *
-     * @param _tokenId NFT tokenId
-     * @return bool opened state
-     */
-    function isBlindBoxOpened(uint256 _tokenId) public view returns (bool) {
-        return _blindBoxOpened[_tokenId];
+    /// @notice 获取未储存的id
+    function _getTokenId(uint256 random) internal returns (uint256) {
+        // 随机数
+        uint256 temp = random;
+        // false
+        bool flag;
+        // 索引获取id
+        uint256 tokenId = _indexToTokenId[temp];
+        while (!flag) {
+            if (tokenId == 0) {
+                flag = true;
+                tokenId = temp;
+            } else {
+                temp = tokenId;
+                tokenId = _indexToTokenId[tokenId];
+            }
+        }
+        _indexToTokenId[random] = _remainCount();
+        return tokenId;
     }
 
-    /**
-     * @dev NFT URI
-     * @return string baseuri
-     */
+    /// @notice baseURI
     function _baseURI() internal view override returns (string memory) {
-        return _nftURI;
+        return _baseUri;
     }
 
-    /**
-     * @dev 销毁
-     */
-    function _burn(uint256 _tokenId)
-        internal
-        override(ERC721URIStorage)
-        exists(_tokenId)
-    {
-        super._burn(_tokenId);
+    /// @notice Converts a uint256 to its string representation
+    function _toString(uint256 value) internal pure returns (string memory) {
+        // Inspired by OraclizeAPI's implementation - MIT licence
+        // https://github.com/oraclize/ethereum-api/blob/b42146b063c7d6ee1358846c198246239e9360e8/oraclizeAPI_0.4.25.sol
+
+        if (value == 0) {
+            return "0";
+        }
+        uint256 temp = value;
+        uint256 digits;
+        while (temp != 0) {
+            digits++;
+            temp /= 10;
+        }
+        bytes memory buffer = new bytes(digits);
+        while (value != 0) {
+            digits -= 1;
+            buffer[digits] = bytes1(uint8(48 + uint256(value % 10)));
+            value /= 10;
+        }
+        return string(buffer);
+    }
+
+    /// @notice 剩余未铸造数量
+    function _remainCount() internal view returns (uint256) {
+        return AVAILABLE_SUPPLY - nftCount;
+    }
+
+    /// @notice get random num
+    function _random(uint256 maxNum) private view returns (uint256) {
+        return
+            uint256(
+                keccak256(abi.encodePacked(block.timestamp, maxNum, msg.sender))
+            ) % maxNum;
     }
 }
