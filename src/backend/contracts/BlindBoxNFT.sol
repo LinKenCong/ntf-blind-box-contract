@@ -8,49 +8,52 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 contract BlindBoxNFT is Ownable, ERC721Enumerable, ReentrancyGuard {
     /// ============ Immutable storage ============
 
-    /// @notice 铸造每个NFT的成本 (in wei)
+    /// @notice The cost of minting each NFT (in wei)
     uint256 public immutable MINT_COST;
-    /// @notice 最大NFT铸造量
+    /// @notice Maximum NFT Minting Amount
     uint256 public immutable AVAILABLE_SUPPLY;
-    /// @notice 每个地址最大铸币量
+    /// @notice Maximum amount of coins minted per address
     uint256 public immutable MAX_PER_ADDRESS;
 
     /// ============ Mutable storage ============
 
-    /// @notice NFT 计数
+    /// @notice NFT Count
     uint256 public nftCount;
     /// @notice token base uri
     string internal _baseUri;
     /// @notice token nft uri
     string internal _nftUri;
-    /// @notice 当前状态 枚举 { 初始,售卖,结束 }
+    /// @notice current state enum { initial, sale, end }
     enum BlindBoxStatus {
         INIT,
         SALE,
         END
     }
-    /// @notice 当前状态
+    /// @notice current state
     BlindBoxStatus private _blindBoxStatus;
 
-    /// @notice 盲盒开启状态
+    /// @notice Blind box open
     mapping(uint256 => bool) internal _blindBoxOpened;
     /// @notice Mapping from index to tokenId
     mapping(uint256 => uint256) private _indexToTokenId;
 
     /// ============ Events ============
 
-    /// @notice 监听 打开盲盒
+    /// @notice event Open the blind box
+    /// @param tokenId token id
     event OpenBlindBox(uint256 tokenId);
 
     /// ============ Modifier ============
 
-    /// @notice 检测 NFT存在
+    /// @notice check NFT exists
+    /// @param tokenId token id
     modifier tokenExists(uint256 tokenId) {
         require(_exists(tokenId), "BlindBoxNFT: Token nonexistent");
         _;
     }
 
-    /// @notice 检测 盲盒未被打开
+    /// @notice check Blind box not opened
+    /// @param tokenId token id
     modifier blindBoxNotOpen(uint256 tokenId) {
         require(
             !_blindBoxOpened[tokenId],
@@ -59,7 +62,8 @@ contract BlindBoxNFT is Ownable, ERC721Enumerable, ReentrancyGuard {
         _;
     }
 
-    // 检测 盲盒活动 状态
+    // check Blind Box Activity Status
+    /// @param _state BlindBox Status
     modifier blindBoxNotStateCheck(BlindBoxStatus _state) {
         require(
             _blindBoxStatus == _state,
@@ -98,17 +102,19 @@ contract BlindBoxNFT is Ownable, ERC721Enumerable, ReentrancyGuard {
 
     /// ============ Functions ============
 
-    /// @notice 设置盲盒开启
-    function openBlindBox(uint256 _tokenId)
+    /// @notice Set the blind box to open
+    /// @param tokenId token id
+    function openBlindBox(uint256 tokenId)
         external
-        tokenExists(_tokenId)
-        blindBoxNotOpen(_tokenId)
+        tokenExists(tokenId)
+        blindBoxNotOpen(tokenId)
     {
-        _blindBoxOpened[_tokenId] = true;
-        emit OpenBlindBox(_tokenId);
+        _blindBoxOpened[tokenId] = true;
+        emit OpenBlindBox(tokenId);
     }
 
     /// @notice mint NFT
+    /// @param quantity nft count
     function mint(uint256 quantity)
         external
         payable
@@ -137,7 +143,7 @@ contract BlindBoxNFT is Ownable, ERC721Enumerable, ReentrancyGuard {
 
     /// ------ OnlyOwner ------
 
-    /// @notice 开始售卖
+    /// @notice start selling
     function saleActive()
         external
         onlyOwner
@@ -146,7 +152,8 @@ contract BlindBoxNFT is Ownable, ERC721Enumerable, ReentrancyGuard {
         _blindBoxStatus = BlindBoxStatus.SALE;
     }
 
-    /// @notice 结束售卖
+    /// @notice end of sale
+    /// @param nftUri add open blindbox uri
     function endActive(string memory nftUri)
         external
         onlyOwner
@@ -156,7 +163,7 @@ contract BlindBoxNFT is Ownable, ERC721Enumerable, ReentrancyGuard {
         _nftUri = nftUri;
     }
 
-    /// @notice 提取合约金额
+    /// @notice Withdraw the contract amount
     function withdraw() external payable onlyOwner nonReentrant {
         payable(owner()).transfer(address(this).balance);
     }
@@ -164,6 +171,7 @@ contract BlindBoxNFT is Ownable, ERC721Enumerable, ReentrancyGuard {
     /// ============ Developer-defined functions ============
 
     /// @notice Returns metadata about a token
+    /// @param tokenId token id
     function tokenURI(uint256 tokenId)
         public
         view
@@ -181,13 +189,11 @@ contract BlindBoxNFT is Ownable, ERC721Enumerable, ReentrancyGuard {
                 : string(abi.encodePacked(_nftUri, _toString(tokenId)));
     }
 
-    /// @notice 获取未储存的id
+    /// @notice get unsaved id
+    /// @param random random num
     function _getTokenId(uint256 random) internal returns (uint256) {
-        // 随机数
         uint256 temp = random;
-        // false
         bool flag;
-        // 索引获取id
         uint256 tokenId = _indexToTokenId[temp];
         while (!flag) {
             if (tokenId == 0) {
@@ -208,10 +214,8 @@ contract BlindBoxNFT is Ownable, ERC721Enumerable, ReentrancyGuard {
     }
 
     /// @notice Converts a uint256 to its string representation
+    /// @param value uint
     function _toString(uint256 value) internal pure returns (string memory) {
-        // Inspired by OraclizeAPI's implementation - MIT licence
-        // https://github.com/oraclize/ethereum-api/blob/b42146b063c7d6ee1358846c198246239e9360e8/oraclizeAPI_0.4.25.sol
-
         if (value == 0) {
             return "0";
         }
@@ -230,12 +234,13 @@ contract BlindBoxNFT is Ownable, ERC721Enumerable, ReentrancyGuard {
         return string(buffer);
     }
 
-    /// @notice 剩余未铸造数量
+    /// @notice Remaining unminted quantity
     function _remainCount() internal view returns (uint256) {
         return AVAILABLE_SUPPLY - nftCount;
     }
 
     /// @notice get random num
+    /// @param maxNum Maximum NFT Minting Amount
     function _random(uint256 maxNum) private view returns (uint256) {
         return
             uint256(
